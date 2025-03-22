@@ -27,7 +27,6 @@ func main() {
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
-
 		fmt.Print(">")
 		line, err := reader.ReadString('\n')
 		if err != nil {

@@ -2,12 +2,16 @@ package request
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
+
+	"github.com/agustin-carnevale/tcp-to-http/internal/headers"
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	state       requestState
 }
 
@@ -21,6 +25,7 @@ type requestState int
 
 const (
 	REQUEST_INITIALIZED requestState = iota
+	REQUEST_PARSING_HEADERS
 	REQUEST_COMPLETED
 )
 
@@ -32,7 +37,8 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 	readToIndex := 0
 	request := Request{
-		state: REQUEST_INITIALIZED,
+		state:   REQUEST_INITIALIZED,
+		Headers: headers.Headers{},
 	}
 
 	for request.state != REQUEST_COMPLETED {
@@ -137,13 +143,13 @@ func parseRequestLineFromString(requestLineString string) (*RequestLine, error) 
 }
 
 func (r *Request) parse(data []byte) (int, error) {
-
 	// if request already completed
 	if r.state == REQUEST_COMPLETED {
 		return 0, errors.New("error: trying to read data in a done state")
 	}
 
-	// if request is not completed
+	// Parse REQUEST LINE
+	// if request is just initialized (first step is parsing request-line)
 	if r.state == REQUEST_INITIALIZED {
 		requestLine, numBytesParsed, err := parseRequestLine(data)
 		if err != nil {
@@ -156,10 +162,44 @@ func (r *Request) parse(data []byte) (int, error) {
 
 		// if bytes consumed then update requestLine and state
 		r.RequestLine = *requestLine
-		r.state = REQUEST_COMPLETED
+		r.state = REQUEST_PARSING_HEADERS
 
 		return numBytesParsed, nil
 	}
 
+	// Parse HEADERS
+	// if request is done with request-line, start parsing headers
+	if r.state == REQUEST_PARSING_HEADERS {
+		numBytesParsed, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+
+		if done {
+			r.state = REQUEST_COMPLETED
+			return 0, nil
+		} else {
+			if numBytesParsed == 0 {
+				// did not parse anything, more data need
+				return 0, nil
+			} else {
+				// it did parse, continued with more headers if any
+				return numBytesParsed, nil
+			}
+		}
+	}
+
 	return 0, errors.New("error: unknown parser state")
+}
+
+func (r *Request) Print() {
+	fmt.Println("Request line:")
+	fmt.Println("- Method:", r.RequestLine.Method)
+	fmt.Println("- Target:", r.RequestLine.RequestTarget)
+	fmt.Println("- Version:", r.RequestLine.HttpVersion)
+	fmt.Println("")
+	fmt.Println("Headers:")
+	for key, value := range r.Headers {
+		fmt.Printf("- %s: %s\n", key, value)
+	}
 }

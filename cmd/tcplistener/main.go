@@ -27,14 +27,7 @@ func main() {
 		if err != nil {
 			fmt.Println("Error parsing request", err)
 		}
-		printRequestLine(req.RequestLine)
+		req.Print()
 		// fmt.Println("Connection closed.")
 	}
-}
-
-func printRequestLine(requestLine request.RequestLine) {
-	fmt.Println("Request line:")
-	fmt.Println("- Method:", requestLine.Method)
-	fmt.Println("- Target:", requestLine.RequestTarget)
-	fmt.Println("- Version:", requestLine.HttpVersion)
 }

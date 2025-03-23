@@ -12,6 +12,7 @@ import (
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 	state       requestState
 }
 
@@ -26,6 +27,7 @@ type requestState int
 const (
 	REQUEST_INITIALIZED requestState = iota
 	REQUEST_PARSING_HEADERS
+	REQUEST_PARSING_BODY
 	REQUEST_COMPLETED
 )
 
@@ -54,6 +56,20 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		if err != nil {
 			if err == io.EOF {
 				request.state = REQUEST_COMPLETED
+
+				if _, exists := request.Headers.Get("Content-Length"); exists {
+					// if there is a Body, we need to check edge case
+					// where we finish reading the request but body < Content-Length
+					// in this case we decided to return an error
+					// (because no match between actual body and what the header says)
+					contentLength, err := contentLengthInt(request.Headers)
+					if err != nil {
+						return nil, err
+					}
+					if len(request.Body) < contentLength {
+						return nil, errors.New("body is shorter than Content-Length")
+					}
+				}
 				break
 			}
 			return nil, err
@@ -143,6 +159,9 @@ func parseRequestLineFromString(requestLineString string) (*RequestLine, error) 
 }
 
 func (r *Request) parse(data []byte) (int, error) {
+	fmt.Println("DATA RECEIVED:")
+	fmt.Println(string(data))
+
 	// if request already completed
 	if r.state == REQUEST_COMPLETED {
 		return 0, errors.New("error: trying to read data in a done state")
@@ -176,8 +195,8 @@ func (r *Request) parse(data []byte) (int, error) {
 		}
 
 		if done {
-			r.state = REQUEST_COMPLETED
-			return 0, nil
+			r.state = REQUEST_PARSING_BODY
+			return numBytesParsed, nil
 		} else {
 			if numBytesParsed == 0 {
 				// did not parse anything, more data need
@@ -187,6 +206,26 @@ func (r *Request) parse(data []byte) (int, error) {
 				return numBytesParsed, nil
 			}
 		}
+	}
+
+	if r.state == REQUEST_PARSING_BODY {
+		// Append the incoming data to body
+		r.Body = append(r.Body, data...)
+
+		contentLength, err := contentLengthInt(r.Headers)
+		if err != nil {
+			return 0, err
+		}
+
+		if len(r.Body) > contentLength {
+			return 0, errors.New("body is longer than Content-Length")
+		}
+
+		if len(r.Body) == contentLength {
+			r.state = REQUEST_COMPLETED
+		}
+
+		return len(data), nil
 	}
 
 	return 0, errors.New("error: unknown parser state")
@@ -202,4 +241,10 @@ func (r *Request) Print() {
 	for key, value := range r.Headers {
 		fmt.Printf("- %s: %s\n", key, value)
 	}
+	if len(r.Body) > 0 {
+		fmt.Println("")
+		fmt.Println("Body:")
+		fmt.Println(string(r.Body))
+	}
+	// fmt.Println("State:", r.state)
 }

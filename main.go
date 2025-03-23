@@ -58,10 +58,19 @@ func main() {
 	// fmt.Println("Done:")
 	// fmt.Println(done)
 
+	// reader := &chunkReader{
+	// 	data:            "GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+	// 	numBytesPerRead: 3,
+	// }
 	reader := &chunkReader{
-		data:            "GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n",
+		data: "POST /submit HTTP/1.1\r\n" +
+			"Host: localhost:42069\r\n" +
+			"Content-Length: 16\r\n" +
+			"\r\n" +
+			"This is the body",
 		numBytesPerRead: 3,
 	}
+
 	r, err := request.RequestFromReader(reader)
 	if err != nil {
 		fmt.Println(err)

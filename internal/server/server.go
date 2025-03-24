@@ -5,6 +5,8 @@ import (
 	"log"
 	"net"
 	"sync/atomic"
+
+	"github.com/agustin-carnevale/tcp-to-http/internal/response"
 )
 
 type Server struct {
@@ -51,16 +53,18 @@ func (s *Server) listen() {
 }
 
 func (s *Server) handle(conn net.Conn) {
-	responseData := []byte(
-		"HTTP/1.1 200 OK\r\n" +
-			"Content-Type: text/plain\r\n" +
-			"\r\n" +
-			"Hello World!",
-	)
-	_, err := conn.Write(responseData)
+	headers := response.GetDefaultHeaders(0)
+
+	err := response.WriteStatusLine(conn, response.StatusOK)
 	if err != nil {
-		log.Fatalf("Error sending response: %v", err)
+		log.Fatalf("Error writing response status-line: %v", err)
 	}
+
+	response.WriteHeaders(conn, headers)
+	if err != nil {
+		log.Fatalf("Error writing response headers: %v", err)
+	}
+
 	err = conn.Close()
 	if err != nil {
 		log.Fatalf("Error closing connection: %v", err)

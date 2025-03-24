@@ -56,7 +56,6 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		if err != nil {
 			if err == io.EOF {
 				request.state = REQUEST_COMPLETED
-
 				if _, exists := request.Headers.Get("Content-Length"); exists {
 					// if there is a Body, we need to check edge case
 					// where we finish reading the request but body < Content-Length
@@ -64,14 +63,17 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 					// (because no match between actual body and what the header says)
 					contentLength, err := contentLengthInt(request.Headers)
 					if err != nil {
+						fmt.Println(err)
 						return nil, err
 					}
 					if len(request.Body) < contentLength {
+						fmt.Println(err)
 						return nil, errors.New("body is shorter than Content-Length")
 					}
 				}
 				break
 			}
+			fmt.Println(err)
 			return nil, err
 		}
 
@@ -81,14 +83,15 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		// PARSE FROM THE BUFFER
 		numBytesParsed, err := request.parse(buffer[:readToIndex])
 		if err != nil {
+			fmt.Println(err)
 			return nil, err
 		}
 
 		// Shift remaining unparsed data to the beginning of the buffer
 		copy(buffer, buffer[numBytesParsed:])
 		readToIndex -= numBytesParsed
-
 	}
+
 	return &request, nil
 }
 
@@ -159,8 +162,6 @@ func parseRequestLineFromString(requestLineString string) (*RequestLine, error) 
 }
 
 func (r *Request) parse(data []byte) (int, error) {
-	fmt.Println("DATA RECEIVED:")
-	fmt.Println(string(data))
 
 	// if request already completed
 	if r.state == REQUEST_COMPLETED {
@@ -195,8 +196,14 @@ func (r *Request) parse(data []byte) (int, error) {
 		}
 
 		if done {
-			r.state = REQUEST_PARSING_BODY
-			return numBytesParsed, nil
+			if _, exists := r.Headers.Get("Content-Length"); exists {
+				r.state = REQUEST_PARSING_BODY
+				return numBytesParsed, nil
+			} else {
+				r.state = REQUEST_COMPLETED
+				return numBytesParsed, nil
+			}
+
 		} else {
 			if numBytesParsed == 0 {
 				// did not parse anything, more data need

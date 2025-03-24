@@ -56,6 +56,13 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 
 	bytesConsumed := endOfHeaderIdx + len(CRLF)
+
+	// Contemplate edge case is last header (and there is no body)
+	CRLFIdx := bytes.Index(data[bytesConsumed:], []byte(CRLF))
+	if CRLFIdx == 0 {
+		return bytesConsumed, true, nil
+	}
+
 	return bytesConsumed, false, nil
 }
 

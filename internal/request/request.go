@@ -34,6 +34,7 @@ const (
 const CRLF = "\r\n"
 const INITIAL_BUFFER_SIZE = 8
 
+// TODO: case there is a Content-Length but no body at all, implement some check
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	buffer := make([]byte, INITIAL_BUFFER_SIZE)
 

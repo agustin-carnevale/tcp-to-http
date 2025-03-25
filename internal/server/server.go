@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"net"
@@ -66,34 +65,10 @@ func (s *Server) handle(conn net.Conn) {
 		return
 	}
 
-	var respBuffer bytes.Buffer
-	handlerError := s.handler(&respBuffer, req)
-	if handlerError != nil {
-		err := handlerError.WriteErrorResponse(conn)
-		if err != nil {
-			log.Fatalf("Error writing response error: %v", err)
-			return
-		}
-	}
-
 	// Response
-	headers := response.GetDefaultHeaders(respBuffer.Len())
-
-	err = response.WriteStatusLine(conn, response.StatusOK)
-	if err != nil {
-		log.Fatalf("Error writing response status-line: %v", err)
-		return
+	respWriter := &response.Writer{
+		Connection: conn,
 	}
 
-	response.WriteHeaders(conn, headers)
-	if err != nil {
-		log.Fatalf("Error writing response headers: %v", err)
-		return
-	}
-
-	err = response.WriteBody(conn, respBuffer.Bytes())
-	if err != nil {
-		log.Fatalf("Error writing response body: %v", err)
-		return
-	}
+	s.handler(respWriter, req)
 }

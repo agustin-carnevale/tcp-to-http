@@ -24,6 +24,25 @@ func (h Headers) Get(key string) (string, bool) {
 	return value, exists
 }
 
+func (h Headers) Set(key, value string) {
+	// make key lowercase
+	key = strings.ToLower(key)
+
+	// if header already exists append new value (comma-separated)
+	currentValue, exists := h[key]
+	if exists {
+		h[key] = currentValue + ", " + value
+	} else {
+		h[key] = value
+	}
+}
+
+func (h Headers) SetWithOverride(key, value string) {
+	// make key lowercase
+	key = strings.ToLower(key)
+	h[key] = value
+}
+
 // key: value \r\n
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	endOfHeaderIdx := bytes.Index(data, []byte(CRLF))
@@ -44,16 +63,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 
 	// store header
-	// (make key lowercase)
-	key = strings.ToLower(key)
-
-	// if header already exists append new value (comma-separated)
-	currentValue, exists := h[key]
-	if exists {
-		h[key] = currentValue + ", " + value
-	} else {
-		h[key] = value
-	}
+	h.Set(key, value)
 
 	bytesConsumed := endOfHeaderIdx + len(CRLF)
 

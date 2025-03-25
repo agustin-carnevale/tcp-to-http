@@ -2,7 +2,7 @@ package response
 
 import (
 	"fmt"
-	"io"
+	"net"
 	"strconv"
 
 	"github.com/agustin-carnevale/tcp-to-http/internal/headers"
@@ -29,9 +29,30 @@ const (
 
 const CRLF = "\r\n"
 
-func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
-	var statusLine string
+const (
+	WriteStatusLine WriterState = iota
+	WriteHeaders
+	WriteBody
+)
 
+type WriterState int
+
+type Writer struct {
+	Connection net.Conn
+	state      WriterState
+}
+
+func (w *Writer) Write(data []byte) (int, error) {
+	return w.Connection.Write(data)
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
+	if w.state != WriteStatusLine {
+		return fmt.Errorf("cannot write status line in state %d", w.state)
+	}
+	defer func() { w.state = WriteHeaders }()
+
+	var statusLine string
 	switch statusCode {
 	case StatusOK:
 		statusLine = "HTTP/1.1 200 OK"
@@ -51,13 +72,18 @@ func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
 
 func GetDefaultHeaders(contentLen int) headers.Headers {
 	return headers.Headers{
-		"Content-Length": strconv.Itoa(contentLen),
-		"Connection":     "close",
-		"Content-Type":   "text/plain",
+		"content-length": strconv.Itoa(contentLen),
+		"connection":     "close",
+		"content-type":   "text/plain",
 	}
 }
 
-func WriteHeaders(w io.Writer, headers headers.Headers) error {
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
+	if w.state != WriteHeaders {
+		return fmt.Errorf("cannot write headers in state %d", w.state)
+	}
+	defer func() { w.state = WriteBody }()
+
 	headersString := ""
 	for key, value := range headers {
 		header := key + ": " + value + CRLF
@@ -71,7 +97,9 @@ func WriteHeaders(w io.Writer, headers headers.Headers) error {
 	return err
 }
 
-func WriteBody(w io.Writer, body []byte) error {
-	_, err := w.Write(body)
-	return err
+func (w *Writer) WriteBody(body []byte) (int, error) {
+	if w.state != WriteBody {
+		return 0, fmt.Errorf("cannot write body in state %d", w.state)
+	}
+	return w.Write(body)
 }

@@ -17,6 +17,10 @@ var allowedKeySpecialChars = map[rune]struct{}{
 	'^': {}, '_': {}, '`': {}, '|': {}, '~': {},
 }
 
+func NewHeaders() Headers {
+	return map[string]string{}
+}
+
 func (h Headers) Get(key string) (string, bool) {
 	key = strings.ToLower(key)
 	value, exists := h[key]

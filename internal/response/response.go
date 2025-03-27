@@ -33,6 +33,7 @@ const (
 	WriteStatusLine WriterState = iota
 	WriteHeaders
 	WriteBody
+	WriteTrailers
 )
 
 type WriterState int
@@ -78,8 +79,8 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 	}
 }
 
-func (w *Writer) WriteHeaders(headers headers.Headers) error {
-	if w.state != WriteHeaders {
+func (w *Writer) WriteHeaders(headers headers.Headers, areTrailers bool) error {
+	if w.state != WriteHeaders && !areTrailers {
 		return fmt.Errorf("cannot write headers in state %d", w.state)
 	}
 	defer func() { w.state = WriteBody }()
@@ -124,7 +125,17 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 
 }
 
-func (w *Writer) WriteChunkedBodyDone() (int, error) {
-	endOfBody := "0" + CRLF + CRLF
+func (w *Writer) WriteChunkedBodyDone(hasTrailers bool) (int, error) {
+	endOfBody := "0" + CRLF
+	if !hasTrailers {
+		endOfBody += CRLF
+	}
 	return w.Write([]byte(endOfBody))
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	w.WriteHeaders(h, true)
+	w.Write([]byte(CRLF))
+
+	return nil
 }

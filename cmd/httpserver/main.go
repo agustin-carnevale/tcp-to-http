@@ -1,12 +1,15 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -72,7 +75,7 @@ func handler(w *response.Writer, req *request.Request) {
 	headers := response.GetDefaultHeaders(len(html))
 	headers.SetWithOverride("Content-Type", "text/html")
 
-	err = w.WriteHeaders(headers)
+	err = w.WriteHeaders(headers, false)
 	if err != nil {
 		log.Fatalf("Error writing response headers: %v", err)
 		return
@@ -98,17 +101,18 @@ func proxyHandler(w *response.Writer, req *request.Request) {
 	}
 	defer resp.Body.Close()
 
-	headers := headers.Headers{
+	respHeaders := headers.Headers{
 		"connection":        "close",
 		"content-type":      "text/plain",
 		"transfer-encoding": "chunked",
+		"trailer":           "X-Content-SHA256, X-Content-Length",
 	}
 
 	w.WriteStatusLine(response.StatusOK)
-	w.WriteHeaders(headers)
+	w.WriteHeaders(respHeaders, false)
 
+	body := []byte{}
 	buf := make([]byte, 1024)
-
 	for {
 		n, err := resp.Body.Read(buf)
 		if err != nil {
@@ -126,10 +130,27 @@ func proxyHandler(w *response.Writer, req *request.Request) {
 
 		// Write chunked response
 		w.WriteChunkedBody(buf[:n])
+		body = append(body, buf[:n]...)
 
 	}
 	// fmt.Println("End of Body")
-	w.WriteChunkedBodyDone()
+	w.WriteChunkedBodyDone(true)
+
+	// calculate body hash
+	bodyHash := sha256.Sum256(body)
+
+	// Convert hash to a hex string
+	bodyHashHex := hex.EncodeToString(bodyHash[:])
+
+	// Convert length to a string
+	bodyLengthStr := strconv.Itoa(len(body))
+
+	trailers := headers.Headers{
+		"x-content-sha256": bodyHashHex,
+		"x-content-length": bodyLengthStr,
+	}
+
+	w.WriteTrailers(trailers)
 
 }
 

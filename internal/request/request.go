@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/agustin-carnevale/tcp-to-http/internal/headers"
 )
@@ -31,6 +30,9 @@ const (
 	REQUEST_COMPLETED
 )
 
+// This is just user for debugging purposes
+// var STATE = [4]string{"REQUEST_INITIALIZED", "REQUEST_PARSING_HEADERS", "REQUEST_PARSING_BODY", "REQUEST_COMPLETED"}
+
 const CRLF = "\r\n"
 const INITIAL_BUFFER_SIZE = 8
 
@@ -54,6 +56,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		// READ INTO BUFFER
 		numBytesRead, err := reader.Read(buffer[readToIndex:])
+
 		if err != nil {
 			if err == io.EOF {
 				request.state = REQUEST_COMPLETED
@@ -96,82 +99,44 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	return &request, nil
 }
 
-func parseRequestLine(data []byte) (*RequestLine, int, error) {
-	entireReqString := string(data)
-	requestParts := strings.Split(entireReqString, CRLF)
-
-	// Validate parts divided by CRLF
-	if len(requestParts) < 2 {
-		// means not enough data to read entire request-line
-		return nil, 0, nil
-	}
-
-	// First part should be a RequestLine
-	requestLineString := requestParts[0]
-
-	requestLine, err := parseRequestLineFromString(requestLineString)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// if parse was successful then I parsed the whole requestLine string + the CRLF (which is ignored)
-	bytesParsed := len(requestLineString) + len(CRLF)
-
-	return requestLine, bytesParsed, nil
-}
-
-func parseRequestLineFromString(requestLineString string) (*RequestLine, error) {
-	requestLineParts := strings.Split(requestLineString, " ")
-
-	// Validate RequestLine parts
-	if len(requestLineParts) != 3 {
-		return nil, errors.New("invalid request format")
-	}
-
-	// RequestLine fields
-	method := requestLineParts[0]
-	target := requestLineParts[1]
-	version := requestLineParts[2]
-
-	//Validate version
-	versionParts := strings.Split(version, "/")
-	if len(versionParts) != 2 {
-		return nil, errors.New("invalid request http version format")
-	}
-	httpVersion := versionParts[1]
-	if httpVersion != "1.1" {
-		return nil, errors.New("invalid request version")
-	}
-
-	//Validate method
-	if !isValidHTTPMethod(method) {
-		return nil, errors.New("invalid request method")
-	}
-
-	//Validate target
-	if !strings.HasPrefix(target, "/") {
-		return nil, errors.New("invalid request target")
-	}
-
-	requestLine := RequestLine{
-		HttpVersion:   httpVersion,
-		RequestTarget: target,
-		Method:        method,
-	}
-
-	return &requestLine, nil
-}
-
+/*
+This parse method will iterate over the data we already read/received until this point
+And try to parse as much as possible, until the end or until more data is required
+*/
 func (r *Request) parse(data []byte) (int, error) {
+	totalBytesParsed := 0
+	for r.state != REQUEST_COMPLETED {
+		n, err := r.parseSingle(data[totalBytesParsed:])
+		if err != nil {
+			return 0, err
+		}
+		totalBytesParsed += n
+		// If nothing was parse means we need to receive/read more data in order
+		// to have a complete field/part of the request to be parsed
+		if n == 0 {
+			break
+		}
+	}
+	return totalBytesParsed, nil
+}
+
+/*
+This parseSingle method will be responsible of parsing only one part/component
+of the request at a time. Depending on the state of the parsing, that could be
+the entire request-line, a single header (key: value pair), or append the bytes
+of the body already received.
+*/
+func (r *Request) parseSingle(data []byte) (int, error) {
 
 	// if request already completed
 	if r.state == REQUEST_COMPLETED {
 		return 0, errors.New("error: trying to read data in a done state")
 	}
 
-	// Parse REQUEST LINE
-	// if request is just initialized (first step is parsing request-line)
-	if r.state == REQUEST_INITIALIZED {
+	switch r.state {
+	case REQUEST_INITIALIZED:
+		// Parse REQUEST-LINE
+		// if request is just initialized (first step is parsing request-line)
 		requestLine, numBytesParsed, err := parseRequestLine(data)
 		if err != nil {
 			return 0, err
@@ -186,11 +151,10 @@ func (r *Request) parse(data []byte) (int, error) {
 		r.state = REQUEST_PARSING_HEADERS
 
 		return numBytesParsed, nil
-	}
 
-	// Parse HEADERS
-	// if request is done with request-line, start parsing headers
-	if r.state == REQUEST_PARSING_HEADERS {
+	case REQUEST_PARSING_HEADERS:
+		// Parse HEADERS
+		// if request is done with request-line, start parsing headers
 		numBytesParsed, done, err := r.Headers.Parse(data)
 		if err != nil {
 			return 0, err
@@ -214,9 +178,9 @@ func (r *Request) parse(data []byte) (int, error) {
 				return numBytesParsed, nil
 			}
 		}
-	}
 
-	if r.state == REQUEST_PARSING_BODY {
+	case REQUEST_PARSING_BODY:
+		// Parse BODY
 		// Append the incoming data to body
 		r.Body = append(r.Body, data...)
 
@@ -234,9 +198,10 @@ func (r *Request) parse(data []byte) (int, error) {
 		}
 
 		return len(data), nil
-	}
 
-	return 0, errors.New("error: unknown parser state")
+	default:
+		return 0, errors.New("error: unknown parser state")
+	}
 }
 
 func (r *Request) Print() {

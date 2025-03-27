@@ -1,11 +1,16 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
+	"github.com/agustin-carnevale/tcp-to-http/internal/headers"
 	"github.com/agustin-carnevale/tcp-to-http/internal/request"
 	"github.com/agustin-carnevale/tcp-to-http/internal/response"
 	"github.com/agustin-carnevale/tcp-to-http/internal/server"
@@ -13,7 +18,14 @@ import (
 
 const port = 42069
 
+// const endOfChunkedBody = "0\r\n\r\n"
+
 func handler(w *response.Writer, req *request.Request) {
+	if strings.HasPrefix(req.RequestLine.RequestTarget, "/httpbin") {
+		proxyHandler(w, req)
+		return
+	}
+
 	var statusCode response.StatusCode = response.StatusOK
 	var html string = ""
 
@@ -71,6 +83,53 @@ func handler(w *response.Writer, req *request.Request) {
 		log.Fatalf("Error writing response body: %v", err)
 		return
 	}
+}
+
+func proxyHandler(w *response.Writer, req *request.Request) {
+	proxyToTarget := strings.TrimPrefix(req.RequestLine.RequestTarget, "/httpbin")
+	proxyToUrl := "https://httpbin.org" + proxyToTarget
+
+	fmt.Println(proxyToUrl)
+
+	resp, err := http.Get(proxyToUrl)
+	if err != nil {
+		// http.Error(w, "Failed to reach target", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	headers := headers.Headers{
+		"connection":        "close",
+		"content-type":      "text/plain",
+		"transfer-encoding": "chunked",
+	}
+
+	w.WriteStatusLine(response.StatusOK)
+	w.WriteHeaders(headers)
+
+	buf := make([]byte, 1024)
+
+	for {
+		n, err := resp.Body.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			// http.Error(w, "Error reading from target", http.StatusInternalServerError)
+			return
+		}
+		// fmt.Println("Bytes read:", n)
+
+		// if strings.Contains(string(buf[:n]), endOfChunkedBody) {
+		// 	fmt.Println("END OF BODY RECEIVED!!")
+		// }
+
+		// Write chunked response
+		w.WriteChunkedBody(buf[:n])
+
+	}
+	// fmt.Println("End of Body")
+	w.WriteChunkedBodyDone()
 
 }
 

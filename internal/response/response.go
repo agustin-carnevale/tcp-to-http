@@ -103,3 +103,28 @@ func (w *Writer) WriteBody(body []byte) (int, error) {
 	}
 	return w.Write(body)
 }
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	chunkLength := fmt.Sprintf("%X", len(p)) //uppercase hex
+
+	n1, err := w.Write([]byte(chunkLength))
+	if err != nil {
+		return n1, err
+	}
+	n2, err := w.Write([]byte(CRLF))
+	if err != nil {
+		return n1 + n2, err
+	}
+	n3, err := w.Write(p)
+	if err != nil {
+		return n1 + n2 + n3, err
+	}
+	n4, err := w.Write([]byte(CRLF))
+	return n1 + n2 + n3 + n4, err
+
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	endOfBody := "0" + CRLF + CRLF
+	return w.Write([]byte(endOfBody))
+}
